@@ -26,5 +26,15 @@ namespace EvlWatcher.WCF.DTO
         {
             get; set;
         }
+
+        /// <summary>
+        /// list of blocked country codes (ISO 3166-1 alpha-2)
+        /// </summary>
+        public IList<string> BlockedCountries { get; set; }
+
+        /// <summary>
+        /// whether country blocking is enabled
+        /// </summary>
+        public bool CountryBlockingEnabled { get; set; }
     }
 }

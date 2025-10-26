@@ -1,6 +1,7 @@
 ﻿using EvlWatcher.Config;
 using EvlWatcher.Converter;
 using EvlWatcher.DTOs;
+using EvlWatcher.GeoIP;
 using EvlWatcher.Logging;
 using EvlWatcher.SystemAPI;
 using EvlWatcher.Tasks;
@@ -36,6 +37,7 @@ namespace EvlWatcher
         private readonly ILogger _logger;
         private readonly IPersistentServiceConfiguration _serviceconfiguration;
         private readonly IGenericTaskFactory _genericTaskFactory;
+        private readonly IGeoIPService _geoIPService;
 
         /// <summary>
         /// this is the servicehost for management apps
@@ -71,11 +73,12 @@ namespace EvlWatcher
 
         #region public constructor
 
-        public EvlWatcher(ILogger logger, IPersistentServiceConfiguration configuration, IGenericTaskFactory genericTaskFactory)
+        public EvlWatcher(ILogger logger, IPersistentServiceConfiguration configuration, IGenericTaskFactory genericTaskFactory, IGeoIPService geoIPService)
         {
             _logger = logger;
             _serviceconfiguration = configuration;
             _genericTaskFactory = genericTaskFactory;
+            _geoIPService = geoIPService;
         }
 
         #endregion
@@ -104,7 +107,9 @@ namespace EvlWatcher
                     TaskName = ipt.Name,
                     TriggerCount = ipt.TriggerCount
 
-                }).ToList()
+                }).ToList(),
+                BlockedCountries = _serviceconfiguration.BlockedCountries.ToList(),
+                CountryBlockingEnabled = _serviceconfiguration.CountryBlockingEnabled
 
             };
         }
@@ -181,6 +186,7 @@ namespace EvlWatcher
 
                 result.RemoveAll(p => _serviceconfiguration.BlacklistAddresses.Contains(p));
                 result.RemoveAll(p => IsWhiteListed(p));
+                result.RemoveAll(p => IsCountryBlocked(p));
 
                 return result.ToArray();
             }
@@ -320,6 +326,29 @@ namespace EvlWatcher
         }
 
         /// <summary>
+        /// returns true when the given address is from a blocked country
+        /// </summary>
+        private bool IsCountryBlocked(IPAddress address)
+        {
+            if (!_serviceconfiguration.CountryBlockingEnabled || !_geoIPService.IsAvailable)
+                return false;
+
+            try
+            {
+                string countryCode = _geoIPService.GetCountryCode(address);
+                if (string.IsNullOrEmpty(countryCode))
+                    return false;
+
+                return _serviceconfiguration.BlockedCountries.Contains(countryCode.ToUpper());
+            }
+            catch (Exception ex)
+            {
+                _logger.Dump($"Failed to check country for {address}: {ex.Message}", SeverityLevel.Debug);
+                return false; // Fail open - don't block if we can't determine country
+            }
+        }
+
+        /// <summary>
         /// Pushes the current ban list down into the system API
         /// </summary>
         private void PushBanList()
@@ -330,6 +359,7 @@ namespace EvlWatcher
                     .Union(_serviceconfiguration.BlacklistAddresses)
                     .Distinct()
                     .Where(address => !IsWhiteListed(address))
+                    .Where(address => !IsCountryBlocked(address))
                     .Where(address => !address.Equals(IPAddress.Any))
                     .ToList();
 
@@ -598,15 +628,16 @@ namespace EvlWatcher
             ILogger logger = new DefaultLogger();
             IPersistentServiceConfiguration serviceConfiguration = new XmlServiceConfiguration(logger);
             IGenericTaskFactory genericTaskFactory = new DefaultGenericTaskFactory(logger);
+            IGeoIPService geoIPService = new MaxMindGeoIPService(logger);
 
             if (!Environment.UserInteractive)
             {
-                Run(new EvlWatcher(logger, serviceConfiguration, genericTaskFactory));
+                Run(new EvlWatcher(logger, serviceConfiguration, genericTaskFactory, geoIPService));
             }
             else
             {
                 //debug
-                EvlWatcher w = new EvlWatcher(logger, serviceConfiguration, genericTaskFactory);
+                EvlWatcher w = new EvlWatcher(logger, serviceConfiguration, genericTaskFactory, geoIPService);
                 w.OnStart(null);
                 Thread.Sleep(60000000);
                 w.OnStop();
@@ -641,6 +672,128 @@ namespace EvlWatcher
             EnsureClientPrivileges();
 
             SetPermanentBanInternal(addressList);
+        }
+
+        public string[] GetBlockedCountries()
+        {
+            EnsureClientPrivileges();
+
+            lock (_syncObject)
+            {
+                return _serviceconfiguration.BlockedCountries.ToArray();
+            }
+        }
+
+        public void SetBlockedCountries(string[] countryCodes)
+        {
+            EnsureClientPrivileges();
+
+            lock (_syncObject)
+            {
+                // Clear existing blocked countries
+                var existingCountries = _serviceconfiguration.BlockedCountries.ToList();
+                foreach (string country in existingCountries)
+                {
+                    _serviceconfiguration.RemoveBlockedCountry(country);
+                }
+
+                // Add new blocked countries
+                foreach (string countryCode in countryCodes)
+                {
+                    if (!string.IsNullOrEmpty(countryCode) && countryCode.Length == 2)
+                    {
+                        _serviceconfiguration.AddBlockedCountry(countryCode);
+                    }
+                }
+
+                PushBanList();
+            }
+        }
+
+        public bool GetCountryBlockingEnabled()
+        {
+            EnsureClientPrivileges();
+
+            return _serviceconfiguration.CountryBlockingEnabled;
+        }
+
+        public void SetCountryBlockingEnabled(bool enabled)
+        {
+            EnsureClientPrivileges();
+
+            _serviceconfiguration.CountryBlockingEnabled = enabled;
+            PushBanList();
+        }
+
+        public string GetIPCountry(IPAddress address)
+        {
+            EnsureClientPrivileges();
+
+            if (!_geoIPService.IsAvailable)
+                return "Unknown";
+
+            try
+            {
+                var countryInfo = _geoIPService.GetCountryInfo(address);
+                return countryInfo?.ToString() ?? "Unknown";
+            }
+            catch (Exception ex)
+            {
+                _logger.Dump($"Failed to get country for {address}: {ex.Message}", SeverityLevel.Debug);
+                return "Unknown";
+            }
+        }
+
+        public void ApplyCountryRulesToExistingBans()
+        {
+            EnsureClientPrivileges();
+
+            lock (_syncObject)
+            {
+                _logger.Dump("Applying country rules to existing bans", SeverityLevel.Info);
+
+                // Get all currently banned IPs
+                var tempBans = _lastPolledTempBans.ToList();
+                var permBans = _serviceconfiguration.BlacklistAddresses.ToList();
+
+                // Check temporary bans
+                var tempBansToRemove = new List<IPAddress>();
+                foreach (var ip in tempBans)
+                {
+                    if (IsCountryBlocked(ip))
+                    {
+                        tempBansToRemove.Add(ip);
+                        _logger.Dump($"Removing {ip} from temporary bans due to country blocking", SeverityLevel.Info);
+                    }
+                }
+
+                // Check permanent bans
+                var permBansToRemove = new List<IPAddress>();
+                foreach (var ip in permBans)
+                {
+                    if (IsCountryBlocked(ip))
+                    {
+                        permBansToRemove.Add(ip);
+                        _logger.Dump($"Removing {ip} from permanent bans due to country blocking", SeverityLevel.Info);
+                    }
+                }
+
+                // Remove IPs that are now blocked by country rules
+                foreach (var ip in tempBansToRemove)
+                {
+                    _lastPolledTempBans.Remove(ip);
+                }
+
+                foreach (var ip in permBansToRemove)
+                {
+                    _serviceconfiguration.RemoveBlackListAddress(ip);
+                }
+
+                // Update firewall rules
+                PushBanList();
+
+                _logger.Dump($"Country rules applied: {tempBansToRemove.Count} temporary bans and {permBansToRemove.Count} permanent bans removed", SeverityLevel.Info);
+            }
         }
 
         #endregion

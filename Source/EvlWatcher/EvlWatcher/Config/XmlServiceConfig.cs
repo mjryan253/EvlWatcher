@@ -16,12 +16,14 @@ namespace EvlWatcher.Config
 
         private readonly IList<IPAddress> _blacklistAddresses = new List<IPAddress>();
         private readonly IList<string> _whiteListPatterns = new List<string>();
+        private readonly IList<string> _blockedCountries = new List<string>();
         private readonly IList<IPersistentTaskConfiguration> _taskConfigurations = new List<IPersistentTaskConfiguration>();
 
         private readonly ILogger _logger;
         private bool _inLoading = false;
         private int _consoleBacklog;
         private int _eventLogInterval;
+        private bool _countryBlockingEnabled = false;
 
         #endregion
 
@@ -61,6 +63,25 @@ namespace EvlWatcher.Config
             get
             {
                 return _taskConfigurations.AsQueryable();
+            }
+        }
+
+        public IQueryable<string> BlockedCountries => _blockedCountries.AsQueryable();
+
+        public bool CountryBlockingEnabled
+        {
+            get
+            {
+                return _countryBlockingEnabled;
+            }
+            set
+            {
+                if (_countryBlockingEnabled != value)
+                {
+                    _countryBlockingEnabled = value;
+                    if (!_inLoading)
+                        WriteGlobalConfig("CountryBlocking", value.ToString());
+                }
             }
         }
 
@@ -189,6 +210,53 @@ namespace EvlWatcher.Config
                         s += ip.ToString() + ";";
 
                     WriteGlobalConfig("Banlist", s);
+                }
+            }
+
+            return changed;
+        }
+
+        public bool AddBlockedCountry(string countryCode)
+        {
+            bool changed = false;
+
+            if (string.IsNullOrEmpty(countryCode) || countryCode.Length != 2)
+                return changed;
+
+            lock (_syncObject)
+            {
+                if (!_blockedCountries.Contains(countryCode.ToUpper()))
+                {
+                    _blockedCountries.Add(countryCode.ToUpper());
+                    changed = true;
+
+                    string s = "";
+                    foreach (string country in _blockedCountries)
+                        s += country + ";";
+
+                    WriteGlobalConfig("BlockedCountries", s);
+                }
+            }
+
+            return changed;
+        }
+
+        public bool RemoveBlockedCountry(string countryCode)
+        {
+            bool changed = false;
+
+            lock (_syncObject)
+            {
+                if (_blockedCountries.Contains(countryCode.ToUpper()))
+                {
+                    _blockedCountries.Remove(countryCode.ToUpper());
+                    changed = true;
+
+                    string s = "";
+                    foreach (string country in _blockedCountries)
+                        s += country + ";";
+
+                    WriteGlobalConfig("BlockedCountries", s);
                 }
             }
 
@@ -336,6 +404,25 @@ namespace EvlWatcher.Config
             {
                 _consoleBacklog = int.Parse(consoleBacklogElement.Value);
                 _logger.Dump($"Console backlog is set to {_consoleBacklog}", SeverityLevel.Verbose);
+            }
+
+            XElement countryBlockingElement = globalConfig.Element("CountryBlocking");
+            if (countryBlockingElement != null)
+            {
+                _countryBlockingEnabled = bool.Parse(countryBlockingElement.Value);
+                _logger.Dump($"Country blocking is set to {_countryBlockingEnabled}", SeverityLevel.Verbose);
+            }
+
+            XElement blockedCountriesElement = globalConfig.Element("BlockedCountries");
+            if (blockedCountriesElement != null)
+            {
+                string countryString = blockedCountriesElement.Value;
+                foreach (string country in countryString.Split(new string[] { ";" }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!string.IsNullOrEmpty(country) && country.Length == 2)
+                        _blockedCountries.Add(country.ToUpper());
+                }
+                _logger.Dump($"Loaded blocked countries: {countryString}", SeverityLevel.Verbose);
             }
 
         }

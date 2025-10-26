@@ -46,6 +46,12 @@ namespace EvlWatcherConsole.ViewModel
         private string _currentTestRegex;
         private string _xmltext;
 
+        // Country blocking properties
+        private bool _countryBlockingEnabled = false;
+        private ObservableCollection<string> _blockedCountries = new ObservableCollection<string>();
+        private string _selectedCountry = "";
+        private string _newCountryCode = "";
+
         #endregion
 
         #region public .ctor
@@ -124,6 +130,10 @@ namespace EvlWatcherConsole.ViewModel
                         {
                             UpdateGlobalConfig();
                         }
+                        if (IsCountryBlockingTabSelected)
+                        {
+                            UpdateCountryBlockingSettings();
+                        }
                     }
                 }
                 catch (Exception)
@@ -168,6 +178,22 @@ namespace EvlWatcherConsole.ViewModel
             ConsoleBackLog = globalConfig.ConsoleBackLog;
         }
 
+        private void UpdateCountryBlockingSettings()
+        {
+            var globalConfig = _model.GetGlobalConfig();
+            CountryBlockingEnabled = globalConfig.CountryBlockingEnabled;
+
+            var blockedCountries = globalConfig.BlockedCountries?.ToList() ?? new List<string>();
+            var toAdd = blockedCountries.Where(country => !_blockedCountries.Contains(country)).ToList();
+            var toRemove = _blockedCountries.Where(country => !blockedCountries.Contains(country)).ToList();
+
+            foreach (string country in toAdd)
+                Application.Current.Dispatcher.Invoke(new Action(() => _blockedCountries.Add(country)));
+
+            foreach (string country in toRemove)
+                Application.Current.Dispatcher.Invoke(new Action(() => _blockedCountries.Remove(country)));
+        }
+
         private void UpdateWhileListPattern()
         {
             var whiteListEntries = _model.GetWhiteListPatterns();
@@ -186,24 +212,32 @@ namespace EvlWatcherConsole.ViewModel
         {
             var currentlyBannedIPs = _model.GetTemporarilyBannedIPs();
 
-            List<IPAddress> toAdd = currentlyBannedIPs.Where(IP => !TemporarilyBannedIPs.Contains(IP)).ToList();
-            List<IPAddress> toRemove = TemporarilyBannedIPs.Where(IP => !currentlyBannedIPs.Contains(IP)).ToList();
+            List<IPAddress> toAdd = currentlyBannedIPs.Where(IP => !TemporarilyBannedIPs.Any(t => t.IPAddress.Equals(IP))).ToList();
+            List<IPAddressWithCountry> toRemove = TemporarilyBannedIPs.Where(IP => !currentlyBannedIPs.Contains(IP.IPAddress)).ToList();
 
             foreach (IPAddress i in toAdd)
-                Application.Current.Dispatcher.Invoke(new Action(() => TemporarilyBannedIPs.Add(i)));
+            {
+                string country = _model.GetIPCountry(i);
+                var ipWithCountry = new IPAddressWithCountry(i, country);
+                Application.Current.Dispatcher.Invoke(new Action(() => TemporarilyBannedIPs.Add(ipWithCountry)));
+            }
 
-            foreach (IPAddress i in toRemove)
+            foreach (IPAddressWithCountry i in toRemove)
                 Application.Current.Dispatcher.Invoke(new Action(() => TemporarilyBannedIPs.Remove(i)));
 
             var permanentlyBannedIPs = _model.GetPermanentlyBannedIPs();
 
-            toAdd = permanentlyBannedIPs.Where(IP => !PermanentlyBannedIPs.Contains(IP)).ToList();
-            toRemove = PermanentlyBannedIPs.Where(IP => !permanentlyBannedIPs.Contains(IP)).ToList();
+            toAdd = permanentlyBannedIPs.Where(IP => !PermanentlyBannedIPs.Any(t => t.IPAddress.Equals(IP))).ToList();
+            toRemove = PermanentlyBannedIPs.Where(IP => !permanentlyBannedIPs.Contains(IP.IPAddress)).ToList();
 
             foreach (IPAddress i in toAdd)
-                Application.Current.Dispatcher.Invoke(new Action(() => PermanentlyBannedIPs.Add(i)));
+            {
+                string country = _model.GetIPCountry(i);
+                var ipWithCountry = new IPAddressWithCountry(i, country);
+                Application.Current.Dispatcher.Invoke(new Action(() => PermanentlyBannedIPs.Add(ipWithCountry)));
+            }
 
-            foreach (IPAddress i in toRemove)
+            foreach (IPAddressWithCountry i in toRemove)
                 Application.Current.Dispatcher.Invoke(new Action(() => PermanentlyBannedIPs.Remove(i)));
         }
 
@@ -406,14 +440,14 @@ namespace EvlWatcherConsole.ViewModel
         {
             get
             {
-                return new RelayCommand(p => { _model.AddPermanentIPBan(SelectedTemporaryIP); }, p => { return SelectedTemporaryIP != null; });
+                return new RelayCommand(p => { _model.AddPermanentIPBan(SelectedTemporaryIP.IPAddress); }, p => { return SelectedTemporaryIP != null; });
             }
         }
         public ICommand MoveAllTemporaryToPermaCommand
         {
             get
             {
-                return new RelayCommand(p => { _model.AddPermanentIPBans(TemporarilyBannedIPs.ToArray()); }, p => { return CanAddTemporaryToPerma; });
+                return new RelayCommand(p => { _model.AddPermanentIPBans(TemporarilyBannedIPs.Select(ip => ip.IPAddress).ToArray()); }, p => { return CanAddTemporaryToPerma; });
             }
         }
 
@@ -437,16 +471,21 @@ namespace EvlWatcherConsole.ViewModel
             get; set;
         }
 
+        public bool IsCountryBlockingTabSelected
+        {
+            get; set;
+        }
+
 
         public ICommand MoveTemporaryToWhiteListCommand
         {
             get
             {
-                return new RelayCommand(p => { _model.AddWhiteListEntry(SelectedTemporaryIP.ToString()); }, p => { return SelectedTemporaryIP != null; });
+                return new RelayCommand(p => { _model.AddWhiteListEntry(SelectedTemporaryIP.IPAddress.ToString()); }, p => { return SelectedTemporaryIP != null; });
             }
         }
 
-        public IPAddress SelectedTemporaryIP
+        public IPAddressWithCountry SelectedTemporaryIP
         {
             get;
             set;
@@ -465,7 +504,7 @@ namespace EvlWatcherConsole.ViewModel
             }
         }
 
-        public IPAddress SelectedPermanentIP
+        public IPAddressWithCountry SelectedPermanentIP
         {
             get;
             set;
@@ -494,7 +533,7 @@ namespace EvlWatcherConsole.ViewModel
             get
             {
                 return new RelayCommand(p =>
-                { _model.RemoveTemporaryBan(SelectedTemporaryIP); }, p => SelectedTemporaryIP != null && IsServiceResponding );
+                { _model.RemoveTemporaryBan(SelectedTemporaryIP.IPAddress); }, p => SelectedTemporaryIP != null && IsServiceResponding );
             }
         }
 
@@ -511,7 +550,7 @@ namespace EvlWatcherConsole.ViewModel
         {
             get
             {
-                return new RelayCommand(p => _model.RemovePermanentIPBan(SelectedPermanentIP), p => { return SelectedPermanentIP != null && IsServiceResponding; });
+                return new RelayCommand(p => _model.RemovePermanentIPBan(SelectedPermanentIP.IPAddress), p => { return SelectedPermanentIP != null && IsServiceResponding; });
             }
         }
 
@@ -574,8 +613,8 @@ namespace EvlWatcherConsole.ViewModel
             }
         }
 
-        public ObservableCollection<IPAddress> TemporarilyBannedIPs { get; } = new ObservableCollection<IPAddress>();
-        public ObservableCollection<IPAddress> PermanentlyBannedIPs { get; } = new ObservableCollection<IPAddress>();
+        public ObservableCollection<IPAddressWithCountry> TemporarilyBannedIPs { get; } = new ObservableCollection<IPAddressWithCountry>();
+        public ObservableCollection<IPAddressWithCountry> PermanentlyBannedIPs { get; } = new ObservableCollection<IPAddressWithCountry>();
         public ObservableCollection<string> WhiteListedPatterns { get; } = new ObservableCollection<string>();
 
         public int CheckInterval
@@ -629,6 +668,99 @@ namespace EvlWatcherConsole.ViewModel
             {
                 _loglevel = value;
                 Notify(nameof(LogLevel));
+            }
+        }
+
+        // Country blocking properties
+        public bool CountryBlockingEnabled
+        {
+            get { return _countryBlockingEnabled; }
+            set
+            {
+                _countryBlockingEnabled = value;
+                Notify(nameof(CountryBlockingEnabled));
+            }
+        }
+
+        public ObservableCollection<string> BlockedCountries => _blockedCountries;
+
+        public string SelectedCountry
+        {
+            get { return _selectedCountry; }
+            set
+            {
+                _selectedCountry = value;
+                Notify(nameof(SelectedCountry));
+            }
+        }
+
+        public string NewCountryCode
+        {
+            get { return _newCountryCode; }
+            set
+            {
+                _newCountryCode = value;
+                Notify(nameof(NewCountryCode));
+            }
+        }
+
+        // Country blocking commands
+        public ICommand ToggleCountryBlockingCommand
+        {
+            get
+            {
+                return new RelayCommand(p => 
+                {
+                    _model.SetCountryBlockingEnabled(!CountryBlockingEnabled);
+                    CountryBlockingEnabled = !CountryBlockingEnabled;
+                }, p => IsServiceResponding);
+            }
+        }
+
+        public ICommand AddBlockedCountryCommand
+        {
+            get
+            {
+                return new RelayCommand(p => 
+                {
+                    if (!string.IsNullOrEmpty(NewCountryCode) && NewCountryCode.Length == 2)
+                    {
+                        var countries = _blockedCountries.ToList();
+                        if (!countries.Contains(NewCountryCode.ToUpper()))
+                        {
+                            countries.Add(NewCountryCode.ToUpper());
+                            _model.SetBlockedCountries(countries.ToArray());
+                            NewCountryCode = "";
+                        }
+                    }
+                }, p => IsServiceResponding && !string.IsNullOrEmpty(NewCountryCode));
+            }
+        }
+
+        public ICommand RemoveBlockedCountryCommand
+        {
+            get
+            {
+                return new RelayCommand(p => 
+                {
+                    if (!string.IsNullOrEmpty(SelectedCountry))
+                    {
+                        var countries = _blockedCountries.ToList();
+                        countries.Remove(SelectedCountry);
+                        _model.SetBlockedCountries(countries.ToArray());
+                    }
+                }, p => IsServiceResponding && !string.IsNullOrEmpty(SelectedCountry));
+            }
+        }
+
+        public ICommand ApplyCountryRulesCommand
+        {
+            get
+            {
+                return new RelayCommand(p => 
+                {
+                    _model.ApplyCountryRulesToExistingBans();
+                }, p => IsServiceResponding);
             }
         }
      

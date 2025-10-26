@@ -14,6 +14,9 @@
 		<WhiteList>192.168.*;10.0.0.*;127.0.0.1;</WhiteList>
 		<!-- this is the list of permanently banned ips. (blacklist) - those bans will never get lifted automatically-->
 		<Banlist></Banlist>
+		<!-- country blocking settings -->
+		<CountryBlocking Enabled="false"></CountryBlocking>
+		<BlockedCountries></BlockedCountries>
 	</Global>
 
 	<!-- OK, so here are all rules i know, some work on specific servers, some don't. All rules add up and should keep common windows systems safe from RDP-Bruters.

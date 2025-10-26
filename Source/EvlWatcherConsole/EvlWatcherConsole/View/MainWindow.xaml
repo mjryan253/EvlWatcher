@@ -210,6 +210,57 @@
                     </StackPanel>
                 </Grid>
             </TabItem>
+            <TabItem Header="Country Blocking" IsSelected="{Binding IsCountryBlockingTabSelected, Mode=OneWayToSource}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Enable/Disable Section -->
+                    <GroupBox Grid.Row="0" Header="Country Blocking Settings" Margin="5">
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox Content="Enable Country Blocking" IsChecked="{Binding CountryBlockingEnabled}" 
+                                      Command="{Binding ToggleCountryBlockingCommand}" Margin="5"/>
+                            <TextBlock Text="Block IPs from selected countries" VerticalAlignment="Center" 
+                                       Foreground="Gray" Margin="10,0"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <!-- Country List Section -->
+                    <GroupBox Grid.Row="1" Header="Blocked Countries" Margin="5">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <ListBox Grid.Row="0" ItemsSource="{Binding BlockedCountries}" 
+                                     SelectedItem="{Binding SelectedCountry}" Margin="5"/>
+                            
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="5">
+                                <TextBox Text="{Binding NewCountryCode, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="60" Margin="0,0,5,0" ToolTip="Enter 2-letter country code (e.g., CN, RU)"/>
+                                <Button Content="Add" Command="{Binding AddBlockedCountryCommand}" 
+                                        Margin="0,0,5,0" ToolTip="Add country to block list"/>
+                                <Button Content="Remove" Command="{Binding RemoveBlockedCountryCommand}" 
+                                        ToolTip="Remove selected country from block list"/>
+                            </StackPanel>
+                        </Grid>
+                    </GroupBox>
+
+                    <!-- Actions Section -->
+                    <GroupBox Grid.Row="2" Header="Actions" Margin="5">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Apply Rules to Existing Bans" Command="{Binding ApplyCountryRulesCommand}" 
+                                    Margin="5" ToolTip="Scan existing bans and apply country rules"/>
+                            <TextBlock Text="This will remove any currently banned IPs that are from blocked countries" 
+                                       VerticalAlignment="Center" Foreground="Gray" Margin="10,0"/>
+                        </StackPanel>
+                    </GroupBox>
+                </Grid>
+            </TabItem>
             <TabItem Header="Rule Tester" IsSelected="{Binding IsRuleEditorTabSelected, Mode=OneWayToSource}">
                 <StackPanel Orientation="Vertical">
                     <Label Grid.Row="0">On this tab you can test out the rules of EvlWatcher, to find out if it would work for a given event-log entry</Label>

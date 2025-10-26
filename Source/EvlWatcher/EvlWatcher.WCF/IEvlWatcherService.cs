@@ -49,5 +49,29 @@ namespace EvlWatcher.WCF
         [OperationContract]
         [FaultContract(typeof(ServiceFaultDTO))]
         void RemoveTemporaryBan(IPAddress address);
+
+        [OperationContract]
+        [FaultContract(typeof(ServiceFaultDTO))]
+        string[] GetBlockedCountries();
+
+        [OperationContract]
+        [FaultContract(typeof(ServiceFaultDTO))]
+        void SetBlockedCountries(string[] countryCodes);
+
+        [OperationContract]
+        [FaultContract(typeof(ServiceFaultDTO))]
+        bool GetCountryBlockingEnabled();
+
+        [OperationContract]
+        [FaultContract(typeof(ServiceFaultDTO))]
+        void SetCountryBlockingEnabled(bool enabled);
+
+        [OperationContract]
+        [FaultContract(typeof(ServiceFaultDTO))]
+        string GetIPCountry(IPAddress address);
+
+        [OperationContract]
+        [FaultContract(typeof(ServiceFaultDTO))]
+        void ApplyCountryRulesToExistingBans();
     }
 }

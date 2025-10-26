@@ -148,6 +148,36 @@ namespace EvlWatcherConsole.Model
             Service.SetPermanentBans(iPAddresses);
         }
 
+        public string GetIPCountry(IPAddress ipAddress)
+        {
+            return Service.GetIPCountry(ipAddress);
+        }
+
+        public string[] GetBlockedCountries()
+        {
+            return Service.GetBlockedCountries();
+        }
+
+        public void SetBlockedCountries(string[] countryCodes)
+        {
+            Service.SetBlockedCountries(countryCodes);
+        }
+
+        public bool GetCountryBlockingEnabled()
+        {
+            return Service.GetCountryBlockingEnabled();
+        }
+
+        public void SetCountryBlockingEnabled(bool enabled)
+        {
+            Service.SetCountryBlockingEnabled(enabled);
+        }
+
+        public void ApplyCountryRulesToExistingBans()
+        {
+            Service.ApplyCountryRulesToExistingBans();
+        }
+
         #endregion
     }
 }

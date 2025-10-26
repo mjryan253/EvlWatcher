@@ -32,6 +32,16 @@ namespace EvlWatcher.Config
         IQueryable<IPersistentTaskConfiguration> TaskConfigurations { get; }
 
         /// <summary>
+        /// list of blocked country codes (ISO 3166-1 alpha-2)
+        /// </summary>
+        IQueryable<string> BlockedCountries { get; }
+
+        /// <summary>
+        /// whether country blocking is enabled
+        /// </summary>
+        bool CountryBlockingEnabled { get; set; }
+
+        /// <summary>
         /// adds a pattern to the white list
         /// </summary>
         /// <param name="pattern"></param>
@@ -58,6 +68,20 @@ namespace EvlWatcher.Config
         /// <param name="address"></param>
         /// <returns>true when a change to the blacklist was made</returns>
         bool RemoveBlackListAddress(IPAddress address);
+
+        /// <summary>
+        /// adds a country code to the blocked countries list
+        /// </summary>
+        /// <param name="countryCode">ISO 3166-1 alpha-2 country code</param>
+        /// <returns>true when a change to the blocked countries list was made</returns>
+        bool AddBlockedCountry(string countryCode);
+
+        /// <summary>
+        /// removes a country code from the blocked countries list
+        /// </summary>
+        /// <param name="countryCode">ISO 3166-1 alpha-2 country code</param>
+        /// <returns>true when a change to the blocked countries list was made</returns>
+        bool RemoveBlockedCountry(string countryCode);
 
         /// <summary>
         /// forced the configuration to be reloaded, in case of external changes.
