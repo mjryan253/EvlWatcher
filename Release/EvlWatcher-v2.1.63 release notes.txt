@@ -1,0 +1,4 @@
+### 2025-10-27 release of v.2.1.63 was completed
+- Updated build process for modern development environment
+- Maintained compatibility with existing functionality
+- Ready for Windows deployment
